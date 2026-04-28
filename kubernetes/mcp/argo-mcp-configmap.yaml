@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argo-mcp-config
+  namespace: ${namespace}
+data:
+  ARGOCD_SERVER: ${argocd_server}
+  ARGOCD_INSECURE: "${argocd_insecure}"
+  ARGO_ROLLOUTS_NAMESPACE_SCOPE: ${argo_rollouts_namespace_scope}

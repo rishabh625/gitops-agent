@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-mcp-config
+  namespace: ${namespace}
+data:
+  K8S_API_SERVER: ${k8s_api_server}
+  K8S_INSECURE: "${k8s_insecure}"
+  K8S_NAMESPACE_SCOPE: ${k8s_namespace_scope}

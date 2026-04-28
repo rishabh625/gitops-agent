@@ -1,0 +1,162 @@
+#version: "3.9"
+# MCP health: cold `npx -y` can take minutes; adk-chat waits for service_healthy before probing.
+
+x-mcp-healthcheck: &mcp-healthcheck
+  test:
+    [
+      "CMD",
+      "node",
+      "-e",
+      "require('net').createConnection(8080,'127.0.0.1').on('connect',()=>process.exit(0)).on('error',()=>process.exit(1))",
+    ]
+  interval: 10s
+  timeout: 5s
+  retries: 36
+  start_period: 180s
+
+networks:
+  gitops-net:
+
+services:
+
+  # 🔷 Argo CD MCP (Streamable HTTP on /mcp — required by gitops-agent Go client)
+  argo-mcp:
+    image: node:22-alpine
+    container_name: argo-mcp
+    networks: [gitops-net]
+    working_dir: /app
+    command: ["npx", "-y", "argocd-mcp@latest", "http", "--port", "8080"]
+    environment:
+      ARGOCD_BASE_URL: ${ARGOCD_SERVER}
+      ARGOCD_API_TOKEN: ${ARGOCD_AUTH_TOKEN}
+    healthcheck: *mcp-healthcheck
+    restart: unless-stopped
+
+  # 🔷 GitHub MCP: supergateway exposes Streamable HTTP; inner server runs via host Docker (needs socket).
+  git-mcp:
+    build:
+      context: .
+      dockerfile: Dockerfile.git-mcp-gateway
+    container_name: git-mcp
+    networks: [gitops-net]
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN:-}
+      # On Apple Silicon, if the inner GitHub image fails to start, try: GIT_MCP_DOCKER_PLATFORM=linux/amd64
+      GIT_MCP_DOCKER_PLATFORM: ${GIT_MCP_DOCKER_PLATFORM:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    healthcheck: *mcp-healthcheck
+    restart: unless-stopped
+
+  # 🔷 Kubernetes MCP (Streamable HTTP on /mcp)
+  k8s-mcp:
+    image: node:22-alpine
+    container_name: k8s-mcp
+    networks: [gitops-net]
+    working_dir: /app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      # Set K8S_MCP_REWRITE_LOCALHOST=0 if your kubeconfig already uses a reachable API hostname.
+      K8S_MCP_REWRITE_LOCALHOST: ${K8S_MCP_REWRITE_LOCALHOST:-1}
+    volumes:
+      - ~/.kube/config:/kube/config.in:ro
+      - ./scripts/k8s-mcp-entrypoint.sh:/k8s-mcp-entrypoint.sh:ro
+    command: ["/bin/sh", "/k8s-mcp-entrypoint.sh"]
+    healthcheck: *mcp-healthcheck
+    restart: unless-stopped
+
+  # 🔷 Execution Agent
+  execution-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.executor
+    container_name: execution-agent
+    networks: [gitops-net]
+    volumes:
+      - ./gitops-skills:/app/gitops-skills
+    environment:
+      SKILL_SOURCE: local
+      GIT_MCP_URL: http://git-mcp:8080/mcp
+      ARGO_MCP_URL: http://argo-mcp:8080/mcp
+      K8S_MCP_URL: http://k8s-mcp:8080/mcp
+      MCP_TIMEOUT: ${MCP_TIMEOUT:-20s}
+      MCP_MAX_RETRIES: ${MCP_MAX_RETRIES:-2}
+      LOG_LEVEL: debug
+    depends_on:
+      argo-mcp:
+        condition: service_healthy
+      git-mcp:
+        condition: service_healthy
+      k8s-mcp:
+        condition: service_healthy
+    command: ["/bin/sh", "-c", "while true; do /app/execution-agent -mode probe -skills-root /app/gitops-skills; sleep 30; done"]
+    restart: unless-stopped
+
+  # 🔷 Orchestrator Agent
+  orchestrator-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: orchestrator-agent
+    networks: [gitops-net]
+    volumes:
+      - ./gitops-skills:/app/gitops-skills
+    environment:
+      SKILL_SOURCE: local
+      GIT_MCP_URL: http://git-mcp:8080/mcp
+      ARGO_MCP_URL: http://argo-mcp:8080/mcp
+      K8S_MCP_URL: http://k8s-mcp:8080/mcp
+      MCP_TIMEOUT: ${MCP_TIMEOUT:-20s}
+      MCP_MAX_RETRIES: ${MCP_MAX_RETRIES:-2}
+      LOG_LEVEL: debug
+    depends_on:
+      - execution-agent
+    command: ["/bin/sh", "-c", "while true; do /app/orchestrator-agent -mode probe -skills-root /app/gitops-skills; sleep 30; done"]
+    restart: unless-stopped
+
+  # 🔷 ADK Chat UI
+  adk-chat:
+    build:
+      context: .
+      dockerfile: Dockerfile.adk-chat
+    container_name: adk-chat
+    networks: [gitops-net]
+    volumes:
+      - ./gitops-skills:/app/gitops-skills
+    # On start, adk-chat probes git/argo/k8s MCP (ListTools) and exits with code 1 if any fail (process does not start web/console).
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      ADK_MODEL: ${ADK_MODEL:-gemini-2.5-flash}
+      SKILL_SOURCE: local
+      SKILLS_ROOT: /app/gitops-skills
+      GIT_MCP_URL: http://git-mcp:8080/mcp
+      ARGO_MCP_URL: http://argo-mcp:8080/mcp
+      K8S_MCP_URL: http://k8s-mcp:8080/mcp
+      MCP_TIMEOUT: ${MCP_TIMEOUT:-20s}
+      MCP_MAX_RETRIES: ${MCP_MAX_RETRIES:-2}
+    ports:
+      - "${ADK_CHAT_PORT:-8083}:8080"
+    depends_on:
+      argo-mcp:
+        condition: service_healthy
+      git-mcp:
+        condition: service_healthy
+      k8s-mcp:
+        condition: service_healthy
+      execution-agent:
+        condition: service_started
+      orchestrator-agent:
+        condition: service_started
+    # Web UI defaults to http://localhost:8080/api; override so the browser (host port) matches ADK_CHAT_PORT.
+    command:
+      - web
+      - --port
+      - "8080"
+      - webui
+      - -api_server_address=http://localhost:${ADK_CHAT_PORT:-8083}/api
+      - api
+      - -webui_address=localhost:${ADK_CHAT_PORT:-8083}
+    # Do not restart on MCP probe failure (exit 1); fix MCP services then `docker compose up -d adk-chat`.
+    restart: "no"

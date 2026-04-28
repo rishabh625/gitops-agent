@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: execution-agent
+  namespace: ${agents_namespace}
+  labels:
+    app.kubernetes.io/name: execution-agent
+    app.kubernetes.io/part-of: agent-platform
+spec:
+  replicas: ${executor_agent_replicas}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: execution-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: execution-agent
+        app.kubernetes.io/part-of: agent-platform
+    spec:
+      serviceAccountName: ${agent_service_account_name}
+      containers:
+        - name: execution-agent
+          image: ${executor_agent_image}
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-c"]
+          args:
+            - while true; do /app/execution-agent -mode probe -skills-root /app/gitops-skills; sleep ${agent_probe_interval_seconds}; done
+          env:
+            - name: SKILL_SOURCE
+              value: local
+            - name: GIT_MCP_URL
+              value: ${git_mcp_url}
+            - name: ARGO_MCP_URL
+              value: ${argo_mcp_url}
+            - name: K8S_MCP_URL
+              value: ${k8s_mcp_url}
+            - name: MCP_TIMEOUT
+              value: ${agent_mcp_timeout}
+            - name: MCP_MAX_RETRIES
+              value: "${agent_mcp_max_retries}"

@@ -1,0 +1,47 @@
+kube_context = "gke_PROJECT_REGION_CLUSTER"
+
+namespace            = "mcp-system"
+service_account_name = "mcp-server-sa"
+service_type         = "ClusterIP"
+
+# Replace with the image that provides Argo MCP capabilities.
+argo_mcp_image    = "ghcr.io/example/argo-mcp-server:latest"
+argo_mcp_port     = 8080
+argo_mcp_replicas = 1
+
+argocd_server                  = "argocd-server.argocd.svc.cluster.local:443"
+argocd_insecure                = false
+argo_rollouts_namespace_scope  = "*"
+argocd_token                   = "replace-me"
+
+# Replace with the image that supports GitHub/GitLab/Gitea.
+git_mcp_image    = "ghcr.io/example/git-mcp-server:latest"
+git_mcp_port     = 8080
+git_mcp_replicas = 1
+
+# Replace with the image that provides Kubernetes MCP capabilities.
+k8s_mcp_image    = "ghcr.io/example/k8s-mcp-server:latest"
+k8s_mcp_port     = 8080
+k8s_mcp_replicas = 1
+k8s_api_server   = "https://kubernetes.default.svc"
+k8s_insecure     = false
+k8s_namespace_scope = "*"
+
+# These are public provider URLs.
+github_api_url = "https://api.github.com"
+gitlab_api_url = "https://gitlab.example.com/api/v4"
+gitea_api_url  = "https://gitea.example.com/api/v1"
+
+github_token = "replace-me"
+gitlab_token = "replace-me"
+gitea_token  = "replace-me"
+
+agents_namespace         = "agent-platform"
+agent_service_account_name = "agent-engine-sa"
+orchestrator_agent_image = "ghcr.io/example/gitops-orchestrator-agent:latest"
+orchestrator_agent_replicas = 1
+executor_agent_image     = "ghcr.io/example/gitops-execution-agent:latest"
+executor_agent_replicas  = 1
+agent_probe_interval_seconds = 30
+agent_mcp_timeout        = "20s"
+agent_mcp_max_retries    = 2

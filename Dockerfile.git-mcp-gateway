@@ -1,0 +1,7 @@
+# Bridges official GitHub MCP (stdio-only image) to Streamable HTTP on :8080 for the Go MCP client.
+FROM node:22-alpine
+RUN apk add --no-cache docker-cli
+COPY scripts/git-mcp-gateway-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+EXPOSE 8080
+ENTRYPOINT ["/entrypoint.sh"]
