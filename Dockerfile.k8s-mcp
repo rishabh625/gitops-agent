@@ -1,0 +1,32 @@
+FROM node:22-alpine
+
+# Install dependencies
+RUN apk add --no-cache \
+    bash \
+    curl \
+    python3 \
+    libc6-compat
+
+# Install gcloud SDK
+RUN curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts
+
+#COPY ~/.kube/config /kube/config
+#COPY ~/.config/gcloud /root/.config/gcloud
+#COPY ./scripts/k8s-mcp-entrypoint.sh /k8s-mcp-entrypoint.sh
+
+# Ensure gcloud is on PATH
+ENV PATH="/root/google-cloud-sdk/bin:${PATH}"
+
+# Install GKE auth plugin
+RUN gcloud components install gke-gcloud-auth-plugin --quiet
+
+
+RUN which gcloud \
+ && gcloud --version \
+ && which gke-gcloud-auth-plugin \
+ && gke-gcloud-auth-plugin --version
+
+
+WORKDIR /app
+
+# Default entrypoint overridden by compose

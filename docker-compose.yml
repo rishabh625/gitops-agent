@@ -50,8 +50,11 @@ services:
     restart: unless-stopped
 
   # 🔷 Kubernetes MCP (Streamable HTTP on /mcp)
+  
   k8s-mcp:
-    image: node:22-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.k8s-mcp
     container_name: k8s-mcp
     networks: [gitops-net]
     working_dir: /app
@@ -61,7 +64,8 @@ services:
       # Set K8S_MCP_REWRITE_LOCALHOST=0 if your kubeconfig already uses a reachable API hostname.
       K8S_MCP_REWRITE_LOCALHOST: ${K8S_MCP_REWRITE_LOCALHOST:-1}
     volumes:
-      - ~/.kube/config:/kube/config.in:ro
+      - ${HOME}/.kube/config:/kube/config.in:ro
+      - ${HOME}/.config/gcloud:/root/.config/gcloud
       - ./scripts/k8s-mcp-entrypoint.sh:/k8s-mcp-entrypoint.sh:ro
     command: ["/bin/sh", "/k8s-mcp-entrypoint.sh"]
     healthcheck: *mcp-healthcheck
