@@ -1,0 +1,7 @@
+# Argo CD MCP (Streamable HTTP on /mcp) for Cloud Run — no Docker socket.
+FROM node:22-alpine
+WORKDIR /app
+EXPOSE 8080
+ENV PORT=8080
+# Pin major version in production if cold starts are too slow.
+CMD ["sh", "-c", "exec npx -y argocd-mcp@latest http --port 8080"]

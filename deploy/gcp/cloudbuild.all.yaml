@@ -1,0 +1,49 @@
+# Build all Cloud Run images (MCP servers + adk-chat). Requires vendor/ (run `go mod vendor`).
+substitutions:
+  _REGISTRY: us-central1-docker.pkg.dev/PROJECT_ID/REPO_NAME
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.git-mcp-cloudrun
+      - -t
+      - ${_REGISTRY}/git-mcp:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.argo-mcp
+      - -t
+      - ${_REGISTRY}/argo-mcp:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.k8s-mcp-cloudrun
+      - -t
+      - ${_REGISTRY}/k8s-mcp:latest
+      - .
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.adk-chat
+      - -t
+      - ${_REGISTRY}/adk-chat:latest
+      - .
+
+images:
+  - ${_REGISTRY}/git-mcp:latest
+  - ${_REGISTRY}/argo-mcp:latest
+  - ${_REGISTRY}/k8s-mcp:latest
+  - ${_REGISTRY}/adk-chat:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

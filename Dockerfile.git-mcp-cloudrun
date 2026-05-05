@@ -1,0 +1,8 @@
+# Git MCP → Streamable HTTP for Cloud Run (stdio MCP via supergateway; no Docker-in-Docker).
+FROM node:22-alpine
+RUN apk add --no-cache ca-certificates
+COPY scripts/git-mcp-cloudrun-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+EXPOSE 8080
+ENV PORT=8080
+ENTRYPOINT ["/entrypoint.sh"]

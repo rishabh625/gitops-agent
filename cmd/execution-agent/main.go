@@ -12,6 +12,7 @@ import (
 
 	"google.golang.org/adk/agent"
 
+	"gitops-agent/internal/enterprisesearch"
 	"gitops-agent/internal/executor"
 	"gitops-agent/internal/mcpadapter"
 	"gitops-agent/internal/planner"
@@ -80,6 +81,12 @@ func main() {
 
 	defer adapter.Close()
 
+	entSearch, err := enterprisesearch.NewFromEnv(logger)
+	if err != nil {
+		logger.Error("enterprise search configuration invalid", "error", err)
+		os.Exit(1)
+	}
+
 	if strings.EqualFold(strings.TrimSpace(*mode), "probe") {
 		results := adapter.CheckConnectivity(ctx)
 		ok := true
@@ -98,7 +105,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	exec := executor.New(logger, planner.New(), adapter, loadedSkills)
+	exec := executor.New(logger, planner.New(), adapter, loadedSkills, entSearch)
 	res, err := exec.Run(ctx, executor.Request{
 		Task:   *task,
 		Inputs: parseInputs(*inputsRaw),

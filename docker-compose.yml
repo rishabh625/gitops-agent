@@ -42,6 +42,7 @@ services:
     environment:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_PERSONAL_ACCESS_TOKEN: ${GITHUB_PERSONAL_ACCESS_TOKEN:-}
+      GITHUB_API_URL: ${GITHUB_API_URL:-https://api.github.com}
       # On Apple Silicon, if the inner GitHub image fails to start, try: GIT_MCP_DOCKER_PLATFORM=linux/amd64
       GIT_MCP_DOCKER_PLATFORM: ${GIT_MCP_DOCKER_PLATFORM:-}
     volumes:
@@ -71,55 +72,6 @@ services:
     healthcheck: *mcp-healthcheck
     restart: unless-stopped
 
-  # 🔷 Execution Agent
-  execution-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.executor
-    container_name: execution-agent
-    networks: [gitops-net]
-    volumes:
-      - ./gitops-skills:/app/gitops-skills
-    environment:
-      SKILL_SOURCE: local
-      GIT_MCP_URL: http://git-mcp:8080/mcp
-      ARGO_MCP_URL: http://argo-mcp:8080/mcp
-      K8S_MCP_URL: http://k8s-mcp:8080/mcp
-      MCP_TIMEOUT: ${MCP_TIMEOUT:-20s}
-      MCP_MAX_RETRIES: ${MCP_MAX_RETRIES:-2}
-      LOG_LEVEL: debug
-    depends_on:
-      argo-mcp:
-        condition: service_healthy
-      git-mcp:
-        condition: service_healthy
-      k8s-mcp:
-        condition: service_healthy
-    command: ["/bin/sh", "-c", "while true; do /app/execution-agent -mode probe -skills-root /app/gitops-skills; sleep 30; done"]
-    restart: unless-stopped
-
-  # 🔷 Orchestrator Agent
-  orchestrator-agent:
-    build:
-      context: .
-      dockerfile: Dockerfile.orchestrator
-    container_name: orchestrator-agent
-    networks: [gitops-net]
-    volumes:
-      - ./gitops-skills:/app/gitops-skills
-    environment:
-      SKILL_SOURCE: local
-      GIT_MCP_URL: http://git-mcp:8080/mcp
-      ARGO_MCP_URL: http://argo-mcp:8080/mcp
-      K8S_MCP_URL: http://k8s-mcp:8080/mcp
-      MCP_TIMEOUT: ${MCP_TIMEOUT:-20s}
-      MCP_MAX_RETRIES: ${MCP_MAX_RETRIES:-2}
-      LOG_LEVEL: debug
-    depends_on:
-      - execution-agent
-    command: ["/bin/sh", "-c", "while true; do /app/orchestrator-agent -mode probe -skills-root /app/gitops-skills; sleep 30; done"]
-    restart: unless-stopped
-
   # 🔷 ADK Chat UI
   adk-chat:
     build:
@@ -140,6 +92,11 @@ services:
       K8S_MCP_URL: http://k8s-mcp:8080/mcp
       MCP_TIMEOUT: ${MCP_TIMEOUT:-20s}
       MCP_MAX_RETRIES: ${MCP_MAX_RETRIES:-2}
+      DISCOVERY_ENGINE_GIT_PREFER_CREATE: true
+      DISCOVERY_ENGINE_GIT_FALLBACK: true
+      DISCOVERY_ENGINE_SESSION: projects/567044924985/locations/eu/collections/default_collection/engines/gemini-enterprise-17760551_1776055122481/sessions
+      DISCOVERY_ENGINE_SERVING_CONFIG: projects/567044924985/locations/eu/collections/default_collection/engines/gemini-enterprise-17760551_1776055122481/servingConfigs/default_search
+      DISCOVERY_ENGINE_LOCATION: eu
     ports:
       - "${ADK_CHAT_PORT:-8083}:8080"
     depends_on:
@@ -149,10 +106,6 @@ services:
         condition: service_healthy
       k8s-mcp:
         condition: service_healthy
-      execution-agent:
-        condition: service_started
-      orchestrator-agent:
-        condition: service_started
     # Web UI defaults to http://localhost:8080/api; override so the browser (host port) matches ADK_CHAT_PORT.
     command:
       - web

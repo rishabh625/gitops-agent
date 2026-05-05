@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"gitops-agent/internal/enterprisesearch"
 	"gitops-agent/internal/executor"
 	"gitops-agent/internal/mcpadapter"
 	"gitops-agent/internal/orchestrator"
@@ -41,7 +42,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	orc := orchestrator.New(nil, planner.New(), loadedSkills)
+	entSearch, err := enterprisesearch.NewFromEnv(logger)
+	if err != nil {
+		logger.Error("enterprise search configuration invalid", "error", err)
+		os.Exit(1)
+	}
+
+	orc := orchestrator.New(nil, planner.New(), loadedSkills, entSearch)
 	switch strings.ToLower(strings.TrimSpace(*mode)) {
 	case "form":
 		form, err := orc.GenerateForm(*task)
@@ -51,14 +58,14 @@ func main() {
 		}
 		printJSON(form)
 	case "run":
-		execAgent, err := newExecutionAgent(logger, loadedSkills)
+		execAgent, err := newExecutionAgent(logger, loadedSkills, entSearch)
 		if err != nil {
 			logger.Error("executor init failed", "error", err)
 			os.Exit(1)
 		}
 		defer execAgent.Close()
 
-		orc = orchestrator.New(execAgent.executor, planner.New(), loadedSkills)
+		orc = orchestrator.New(execAgent.executor, planner.New(), loadedSkills, entSearch)
 		inputs, err := parseJSONInputs(*inputsRaw)
 		if err != nil {
 			logger.Error("invalid inputs", "error", err)
@@ -70,7 +77,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "probe":
-		execAgent, err := newExecutionAgent(logger, loadedSkills)
+		execAgent, err := newExecutionAgent(logger, loadedSkills, entSearch)
 		if err != nil {
 			logger.Error("executor init failed", "error", err)
 			os.Exit(1)
@@ -103,7 +110,7 @@ type executionAgentResources struct {
 	adapter  *mcpadapter.Adapter
 }
 
-func newExecutionAgent(logger *slog.Logger, loadedSkills []skills.Skill) (*executionAgentResources, error) {
+func newExecutionAgent(logger *slog.Logger, loadedSkills []skills.Skill, knowledge executor.KnowledgeSearcher) (*executionAgentResources, error) {
 	adapter := mcpadapter.New(mcpadapter.Config{
 		Servers: []mcpadapter.ServerConfig{
 			{
@@ -127,10 +134,8 @@ func newExecutionAgent(logger *slog.Logger, loadedSkills []skills.Skill) (*execu
 		},
 	}, logger)
 
-	defer adapter.Close()
-
 	return &executionAgentResources{
-		executor: executor.New(logger, planner.New(), adapter, loadedSkills),
+		executor: executor.New(logger, planner.New(), adapter, loadedSkills, knowledge),
 		adapter:  adapter,
 	}, nil
 }

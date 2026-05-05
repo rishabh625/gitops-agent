@@ -1,0 +1,22 @@
+# Build and push adk-chat to Artifact Registry.
+# Usage from repo root (requires vendor/ — run `go mod vendor` first):
+#   gcloud builds submit --config=deploy/gcp/cloudbuild.yaml \
+#     --substitutions=_IMAGE=us-central1-docker.pkg.dev/PROJECT/REPO/adk-chat:latest .
+substitutions:
+  _IMAGE: us-central1-docker.pkg.dev/PROJECT_ID/REPO_NAME/adk-chat:latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - Dockerfile.adk-chat
+      - -t
+      - ${_IMAGE}
+      - .
+
+images:
+  - ${_IMAGE}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

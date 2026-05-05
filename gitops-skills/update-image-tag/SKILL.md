@@ -1,11 +1,12 @@
 ---
 name: update-image-tag
-description: Update container image tags in GitOps repositories for Helm or Kustomize workloads and create a pull request for promotion. Use when a new image version must be rolled out without direct cluster mutation.
+description: Update or upgrade container image tags/versions in GitOps repositories for Helm or Kustomize workloads and create a pull request for promotion. Use when a new image version must be rolled out without direct cluster mutation.
 license: Apache-2.0
 compatibility: Requires MCP connectivity to Git, Argo, and Kubernetes servers. No CLI tools required.
 metadata:
   owner: platform-engineering
   category: release-management
+  intent: image-upgrade
   version: "1.0.0"
 allowed-tools: mcp__git__* mcp__argo__* mcp__k8s__*
 ---
@@ -43,14 +44,17 @@ allowed-tools: mcp__git__* mcp__argo__* mcp__k8s__*
 2. Validate target change
    - Ensure `new_tag` differs from current desired tag.
    - Confirm workload in Kubernetes MCP maps to intended application and namespace.
-3. Update manifests through Git MCP
-   - Create branch using release-safe naming.
-   - Update only relevant image fields for selected environment.
+3. Create change branch
+   - Use Git MCP to create a release-safe branch name.
+4. Update manifests
+   - Update only the relevant image fields for the selected environment.
    - Keep unrelated values unchanged.
-4. Open pull request
+5. Commit changes
+   - Commit the manifest updates to the change branch.
+6. Open pull request
    - Include before/after tag values and rollback tag.
    - Attach Argo app context and expected rollout behavior.
-5. Verify after merge
+7. Verify after merge
    - Use Argo MCP to confirm synced and healthy.
    - Use Kubernetes MCP to verify running image tag matches desired state.
 

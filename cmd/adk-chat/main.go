@@ -21,6 +21,7 @@ import (
 	"google.golang.org/adk/tool"
 	"google.golang.org/adk/tool/functiontool"
 
+	"gitops-agent/internal/enterprisesearch"
 	"gitops-agent/internal/executor"
 	"gitops-agent/internal/mcpadapter"
 	"gitops-agent/internal/orchestrator"
@@ -87,9 +88,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	exec := executor.New(logger, planner.New(), adapter, loadedSkills)
+	entSearch, err := enterprisesearch.NewFromEnv(logger)
+	if err != nil {
+		log.Fatalf("enterprise search configuration invalid: %v", err)
+	}
+
+	exec := executor.New(logger, planner.New(), adapter, loadedSkills, entSearch)
 	rt := &chatRuntime{
-		orchestrator: orchestrator.New(exec, planner.New(), loadedSkills),
+		orchestrator: orchestrator.New(exec, planner.New(), loadedSkills, entSearch),
 		mcp:          adapter,
 	}
 
@@ -269,6 +275,16 @@ func mcpStartupProbe(ctx context.Context, adapter *mcpadapter.Adapter, log *slog
 	if len(failed) > 0 {
 		return fmt.Errorf("MCP probe failed for %s — fix endpoints/credentials and retry", strings.Join(failed, ", "))
 	}
+
+	gitAuthProbeCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if _, err := adapter.CallByIntent(gitAuthProbeCtx, mcpadapter.ServerGit, "get current user whoami", map[string]any{}); err != nil {
+		if !strings.Contains(strings.ToLower(err.Error()), "no suitable mcp tool match") {
+			return fmt.Errorf("git MCP auth probe failed: %w", err)
+		}
+		log.Warn("git MCP auth probe skipped (no suitable tool found)")
+	}
+
 	log.Info("adk-chat: MCP startup probe passed")
 	return nil
 }

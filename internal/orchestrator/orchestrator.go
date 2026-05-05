@@ -11,6 +11,7 @@ import (
 
 	"gitops-agent/internal/executor"
 	"gitops-agent/internal/planner"
+	"gitops-agent/internal/prurl"
 	"gitops-agent/internal/skills"
 )
 
@@ -48,6 +49,7 @@ type ProgressEvent struct {
 
 type Output struct {
 	PRLink                 string          `json:"pr_link,omitempty"`
+	EnterpriseSearchHint   string          `json:"enterprise_search_hint,omitempty"`
 	DeploymentInstructions []string        `json:"deployment_instructions"`
 	ArgoCDSyncSteps        []string        `json:"argocd_sync_steps"`
 	Progress               []ProgressEvent `json:"progress"`
@@ -65,19 +67,21 @@ type executionAgent interface {
 }
 
 type Orchestrator struct {
-	executor executionAgent
-	planner  *planner.Planner
-	skills   []skills.Skill
+	executor  executionAgent
+	planner   *planner.Planner
+	skills    []skills.Skill
+	knowledge executor.KnowledgeSearcher
 }
 
-func New(exec executionAgent, p *planner.Planner, loaded []skills.Skill) *Orchestrator {
+func New(exec executionAgent, p *planner.Planner, loaded []skills.Skill, knowledge executor.KnowledgeSearcher) *Orchestrator {
 	if p == nil {
 		p = planner.New()
 	}
 	return &Orchestrator{
-		executor: exec,
-		planner:  p,
-		skills:   loaded,
+		executor:  exec,
+		planner:   p,
+		skills:    loaded,
+		knowledge: knowledge,
 	}
 }
 
@@ -137,11 +141,16 @@ func (o *Orchestrator) SubmitAndRun(ctx context.Context, task string, inputs map
 	})
 	if err != nil {
 		progress = append(progress, progressEvent("execution_delegate", "failed", err.Error()))
+		hint := o.orgHintOnFailure(ctx, task, "execution failed: "+err.Error())
+		if hint != "" {
+			progress = append(progress, progressEvent("enterprise_search", "completed", truncateProgressMessage(hint, 600)))
+		}
 		return RunResponse{
 			Task:   form.Task,
 			Status: "failed",
 			Output: Output{
 				PRLink:                 extractPRLink(res, inputs),
+				EnterpriseSearchHint:   hint,
 				DeploymentInstructions: deploymentInstructions(task, inputs, false),
 				ArgoCDSyncSteps:        argocdSyncSteps(inputs),
 				Progress:               progress,
@@ -150,12 +159,33 @@ func (o *Orchestrator) SubmitAndRun(ctx context.Context, task string, inputs map
 		}, err
 	}
 	progress = append(progress, progressEvent("execution_delegate", "completed", "Execution agent finished"))
+	prLink := extractPRLink(res, inputs)
+	if expectsPullRequest(res) && strings.TrimSpace(prLink) == "" {
+		progress = append(progress, progressEvent("pr_creation", "failed", "Execution finished but no pull request link was detected"))
+		err := fmt.Errorf("execution completed but no pull request link detected; PR was not created")
+		hint := o.orgHintOnFailure(ctx, task, "pull request not detected after successful steps; ensure Git MCP created a PR and returned a URL in tool output")
+		if hint != "" {
+			progress = append(progress, progressEvent("enterprise_search", "completed", truncateProgressMessage(hint, 600)))
+		}
+		return RunResponse{
+			Task:   form.Task,
+			Status: "failed",
+			Output: Output{
+				PRLink:                 "",
+				EnterpriseSearchHint:   hint,
+				DeploymentInstructions: deploymentInstructions(task, inputs, false),
+				ArgoCDSyncSteps:        argocdSyncSteps(inputs),
+				Progress:               progress,
+			},
+			Result: res,
+		}, err
+	}
 
 	return RunResponse{
 		Task:   form.Task,
 		Status: "success",
 		Output: Output{
-			PRLink:                 extractPRLink(res, inputs),
+			PRLink:                 prLink,
 			DeploymentInstructions: deploymentInstructions(task, inputs, true),
 			ArgoCDSyncSteps:        argocdSyncSteps(inputs),
 			Progress:               progress,
@@ -389,13 +419,27 @@ func extractPRLink(res executor.Result, inputs map[string]any) string {
 			return s
 		}
 	}
-	re := regexp.MustCompile(`https?://[^\s]+/(pull|pulls|merge_requests)/[^\s]+`)
 	for _, step := range res.Steps {
-		if m := re.FindString(step.Output); m != "" {
+		if m := prurl.First(step.Output); m != "" {
 			return m
 		}
 	}
 	return ""
+}
+
+func expectsPullRequest(res executor.Result) bool {
+	for _, n := range res.Selected {
+		if strings.Contains(strings.ToLower(n), "pull-request") || strings.Contains(strings.ToLower(n), "pull request") {
+			return true
+		}
+	}
+	for _, step := range res.Steps {
+		s := strings.ToLower(step.Step)
+		if strings.Contains(s, "pull request") || strings.Contains(s, "open pr") || strings.Contains(s, "create pr") {
+			return true
+		}
+	}
+	return false
 }
 
 func deploymentInstructions(task string, inputs map[string]any, success bool) []string {
@@ -437,6 +481,34 @@ func argocdSyncSteps(inputs map[string]any) []string {
 	}
 }
 
+const maxOrchestratorHintLen = 8000
+
+func truncateProgressMessage(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if max <= 0 || len(s) <= max {
+		return s
+	}
+	return s[:max] + "…"
+}
+
+func (o *Orchestrator) orgHintOnFailure(ctx context.Context, task string, detail string) string {
+	if o == nil || o.knowledge == nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 45*time.Second)
+	defer cancel()
+	q := fmt.Sprintf("GitOps orchestration issue. Task: %s. Context: %s", strings.TrimSpace(task), detail)
+	s, err := o.knowledge.Search(ctx, q)
+	if err != nil || strings.TrimSpace(s) == "" {
+		return ""
+	}
+	s = strings.TrimSpace(s)
+	if len(s) > maxOrchestratorHintLen {
+		s = s[:maxOrchestratorHintLen] + "…"
+	}
+	return s
+}
+
 func progressEvent(stage, status, message string) ProgressEvent {
 	return ProgressEvent{
 		At:      time.Now().UTC(),
@@ -464,16 +536,23 @@ func overlapCount(a, b []string) int {
 }
 
 func tokenize(s string) []string {
-	parts := strings.Fields(strings.ToLower(s))
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimFunc(p, func(r rune) bool {
-			return !unicode.IsLetter(r) && !unicode.IsNumber(r)
-		})
-		if len(p) >= 3 {
-			out = append(out, p)
+	s = strings.ToLower(s)
+	out := make([]string, 0, 16)
+	var b strings.Builder
+	flush := func() {
+		if b.Len() >= 3 {
+			out = append(out, b.String())
 		}
+		b.Reset()
 	}
+	for _, r := range s {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
+			b.WriteRune(r)
+			continue
+		}
+		flush()
+	}
+	flush()
 	return out
 }
 

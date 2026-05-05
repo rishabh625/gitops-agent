@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${PROJECT_ID:?Set PROJECT_ID}"
+: "${GOOGLE_API_KEY:?Set GOOGLE_API_KEY}"
+: "${GITHUB_TOKEN:?Set GITHUB_TOKEN (or GITHUB_PERSONAL_ACCESS_TOKEN)}"
+: "${ARGOCD_SERVER:?Set ARGOCD_SERVER}"
+: "${ARGOCD_AUTH_TOKEN:?Set ARGOCD_AUTH_TOKEN (or ARGOCD_TOKEN)}"
+: "${KUBECONFIG_PATH:=${HOME}/.kube/config}"
+
+REGION="${REGION:-us-central1}"
+REPO_NAME="${REPO_NAME:-gitops-agent}"
+
+export PROJECT_ID REGION REPO_NAME GOOGLE_API_KEY GITHUB_TOKEN ARGOCD_SERVER ARGOCD_AUTH_TOKEN KUBECONFIG_PATH
+
+bash ./scripts/deploy-all-gcp-cloud-run.sh

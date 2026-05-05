@@ -1,0 +1,12 @@
+# Kubernetes MCP for Cloud Run: kubeconfig supplied via Secret Manager volume mount at /kube/config.in
+FROM node:22-alpine
+RUN apk add --no-cache bash curl python3 libc6-compat sed
+RUN curl -sSL https://sdk.cloud.google.com | bash -s -- --disable-prompts
+ENV PATH="/root/google-cloud-sdk/bin:${PATH}"
+RUN gcloud components install gke-gcloud-auth-plugin --quiet
+WORKDIR /app
+COPY scripts/k8s-mcp-entrypoint.sh /k8s-mcp-entrypoint.sh
+RUN chmod +x /k8s-mcp-entrypoint.sh
+ENV KUBECONFIG_INPUT=/kube/config.in
+EXPOSE 8080
+ENTRYPOINT ["/bin/sh", "/k8s-mcp-entrypoint.sh"]

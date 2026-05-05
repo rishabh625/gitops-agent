@@ -16,6 +16,8 @@ WORKDIR /app
 RUN apk add --no-cache ca-certificates tzdata wget
 
 COPY --from=builder /out/adk-chat /app/adk-chat
+COPY scripts/cloud-run-entrypoint.sh /app/cloud-run-entrypoint.sh
+RUN chmod +x /app/cloud-run-entrypoint.sh
 COPY gitops-skills /app/gitops-skills
 
 ENTRYPOINT ["/app/adk-chat"]

@@ -40,7 +40,7 @@ fi
 # 4. Detect unsupported GKE exec auth
 ############################################
 
-if grep -q "gke-gcloud-auth-plugin" "$KUBECONFIG"; then
+if grep -q "gke-gcloud-auth-plugin" "$SRC"; then
   echo "kubeconfig requires gke-gcloud-auth-plugin; verifying availability..."
 
   if ! command -v gke-gcloud-auth-plugin >/dev/null 2>&1; then
@@ -78,4 +78,3 @@ exec npx -y kubernetes-mcp-server@latest \
   --port 8080 \
   --kubeconfig "$KUBECONFIG" \
   --cluster-provider kubeconfig
-``

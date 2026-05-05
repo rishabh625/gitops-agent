@@ -1,0 +1,27 @@
+project_id                   = "my-gcp-project"
+region                       = "us-central1"
+service_name                 = "gitops-adk-chat"
+container_image              = "us-central1-docker.pkg.dev/my-gcp-project/gitops-agent/adk-chat:latest"
+artifact_registry_repository = "gitops-agent"
+
+# Set true if you want Terraform to create an empty secret resource.
+# Then add secret value out-of-band:
+#   echo -n "$GOOGLE_API_KEY" | gcloud secrets versions add gitops-google-api-key --data-file=-
+create_google_api_key_secret = false
+google_api_key_secret_name   = "gitops-google-api-key"
+
+allow_unauthenticated = true
+cpu                   = "2"
+memory                = "2Gi"
+timeout_seconds       = 3600
+min_instance_count    = 0
+max_instance_count    = 10
+
+adk_model         = "gemini-2.5-flash"
+adk_public_origin = "" # set after first apply to output cloud_run_service_url
+mcp_timeout       = "20s"
+mcp_max_retries   = 2
+
+git_mcp_url  = "https://git-mcp.example.com/mcp"
+argo_mcp_url = "https://argo-mcp.example.com/mcp"
+k8s_mcp_url  = "https://k8s-mcp.example.com/mcp"
